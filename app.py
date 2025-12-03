@@ -49,8 +49,9 @@ def load_table(uploaded_file):
 st.sidebar.title("PTP Learning Analytics Studio")
 page = st.sidebar.radio(
     "Menu",
-    ["Beranda", "Upload Data Pelatihan", "Overview Pelatihan"],
+    ["Beranda", "Upload Data Pelatihan", "Overview Pelatihan", "Learning Theory Lens"],
 )
+
 
 # Pilihan dataset aktif (untuk halaman selain Upload)
 dataset_name = None
@@ -215,3 +216,118 @@ elif page == "Overview Pelatihan":
                 st.dataframe(quiz)      # semua baris
             else:
                 st.write("Belum ada data kuis/ujian.")
+
+# ====== HALAMAN: LEARNING THEORY LENS ======
+elif page == "Learning Theory Lens":
+    st.title("Learning Theory Lens")
+
+    if not current_data:
+        st.info("Belum ada dataset yang dipilih. Silakan upload data di menu 'Upload Data Pelatihan'.")
+    else:
+        st.markdown(f"### Pelatihan: **{dataset_name}**")
+
+        progress = current_data.get("progress")
+        quiz = current_data.get("quiz")
+
+        if progress is None or quiz is None:
+            st.warning("Butuh data progres dan data kuis/ujian untuk analisis ini.")
+        else:
+            st.subheader("Cognitivism: Time-on-task vs Rata-rata Nilai Kuis")
+
+            # --- Cari kolom ID peserta yang sama di progress & quiz ---
+            id_col = None
+            for candidate in ["NIP", "NIP_NRP", "nip", "participant_id", "id_peserta"]:
+                if candidate in progress.columns and candidate in quiz.columns:
+                    id_col = candidate
+                    break
+
+            if id_col is None:
+                st.error(
+                    "Tidak menemukan kolom ID peserta yang sama di kedua tabel "
+                    "(dicoba: NIP, NIP_NRP, nip, participant_id, id_peserta)."
+                )
+            else:
+                # --- Identifikasi kolom durasi di file progres ---
+                duration_cols = [c for c in progress.columns if "Duration" in c or "Durasi" in c]
+
+                if not duration_cols:
+                    st.error(
+                        "Tidak menemukan kolom durasi (nama kolom mengandung 'Duration' atau 'Durasi'). "
+                        "Silakan cek kembali format file progres."
+                    )
+                else:
+                    def to_minutes(x):
+                        """Konversi 'HH:MM:SS' atau angka ke menit."""
+                        if isinstance(x, str) and ":" in x:
+                            try:
+                                h, m, s = x.split(":")
+                                return int(h) * 60 + int(m) + int(float(s)) / 60
+                            except Exception:
+                                return 0
+                        try:
+                            return float(x)
+                        except Exception:
+                            return 0
+
+                    prog = progress.copy()
+                    for c in duration_cols:
+                        prog[c + "_min"] = prog[c].apply(to_minutes)
+
+                    minute_cols = [c for c in prog.columns if c.endswith("_min")]
+                    prog["total_minutes"] = prog[minute_cols].sum(axis=1)
+
+                    # --- Hitung rata-rata nilai kuis per peserta ---
+                    quiz_cols = [c for c in quiz.columns if "Quiz" in str(c)]
+                    q = quiz.copy()
+                    if quiz_cols:
+                        q["quiz_mean"] = q[quiz_cols].mean(axis=1)
+                    else:
+                        st.error(
+                            "Tidak menemukan kolom nilai kuis (nama kolom mengandung 'Quiz'). "
+                            "Silakan cek kembali format file kuis."
+                        )
+                        q["quiz_mean"] = None
+
+                    # --- Gabungkan & bersihkan ---
+                    merged = prog[[id_col, "total_minutes"]].merge(
+                        q[[id_col, "quiz_mean"]],
+                        on=id_col,
+                        how="inner",
+                    ).dropna()
+
+                    if merged.empty:
+                        st.warning("Tidak ada baris data yang lengkap untuk dianalisis.")
+                    else:
+                        st.write("Cuplikan data gabungan:")
+                        st.dataframe(merged.head())
+
+                        st.markdown("#### Scatter: Total Menit Belajar vs Rata-rata Nilai Kuis")
+                        st.scatter_chart(merged, x="total_minutes", y="quiz_mean")
+
+                        corr = merged["total_minutes"].corr(merged["quiz_mean"])
+                        st.markdown(f"**Korelasi Pearson**: `{corr:.3f}`")
+
+                        # Penjelasan otomatis dengan OpenAI
+                        if client is not None:
+                            with st.spinner("Meminta penjelasan dari OpenAI..."):
+                                try:
+                                    prompt = f"""
+                                    Saya memiliki data pelatihan dengan korelasi antara total menit belajar
+                                    (time-on-task) dan rata-rata nilai kuis sebesar {corr:.3f}.
+                                    Jelaskan hasil ini menggunakan kacamata teori belajar Cognitivism.
+                                    Berikan juga 2-3 saran singkat untuk redesign pembelajaran di KLC
+                                    agar time-on-task lebih mencerminkan pemrosesan informasi yang mendalam.
+                                    Jelaskan dalam bahasa Indonesia yang mudah dipahami.
+                                    """
+                                    response = client.responses.create(
+                                        model="gpt-4.1-mini",
+                                        input=prompt,
+                                    )
+                                    explanation = response.output[0].content[0].text
+                                    st.markdown("### Penjelasan otomatis (OpenAI – Cognitivism Lens)")
+                                    st.write(explanation)
+                                except Exception as e:
+                                    st.error(f"Gagal meminta penjelasan ke OpenAI: {e}")
+                        else:
+                            st.info("OpenAI belum dikonfigurasi, penjelasan otomatis belum aktif.")
+
