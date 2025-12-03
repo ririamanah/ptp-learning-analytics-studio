@@ -24,14 +24,26 @@ def load_table(uploaded_file):
         return None
     name = uploaded_file.name.lower()
     if name.endswith(".csv"):
-        # Banyak file KLC pakai pemisah ; → bisa disesuaikan nanti
+        # Banyak file KLC pakai pemisah ; → coba dulu ; lalu fallback ,
         try:
             return pd.read_csv(uploaded_file, sep=";")
         except Exception:
             uploaded_file.seek(0)
             return pd.read_csv(uploaded_file)
+    elif name.endswith(".xlsx") or name.endswith(".xls"):
+        # Pakai openpyxl untuk file Excel
+        try:
+            return pd.read_excel(uploaded_file, engine="openpyxl")
+        except Exception:
+            uploaded_file.seek(0)
+            return pd.read_excel(uploaded_file)
     else:
-        return pd.read_excel(uploaded_file)
+        # fallback: coba baca sebagai Excel tanpa lihat ekstensi
+        try:
+            return pd.read_excel(uploaded_file, engine="openpyxl")
+        except Exception:
+            uploaded_file.seek(0)
+            return pd.read_csv(uploaded_file)
 
 # ====== SIDEBAR MENU ======
 st.sidebar.title("PTP Learning Analytics Studio")
