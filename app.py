@@ -194,23 +194,24 @@ elif page == "Overview Pelatihan":
         else:
             colC.metric("Baris data kuis/ujian", "–")
 
-        st.markdown("#### Cuplikan Data")
+        st.markdown("#### Cuplikan Data (semua baris)")
+
         tab1, tab2, tab3 = st.tabs(["Profil Peserta", "Progres KLC/LMS", "Nilai Kuis/Ujian"])
 
         with tab1:
             if profile is not None:
-                st.dataframe(profile.head())
+                st.dataframe(profile)   # semua baris
             else:
                 st.write("Belum ada data profil peserta.")
 
         with tab2:
             if progress is not None:
-                st.dataframe(progress.head())
+                st.dataframe(progress)  # semua baris
             else:
                 st.write("Belum ada data progres.")
 
         with tab3:
             if quiz is not None:
-                st.dataframe(quiz.head())
+                st.dataframe(quiz)      # semua baris
             else:
                 st.write("Belum ada data kuis/ujian.")
